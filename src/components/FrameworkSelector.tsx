@@ -68,14 +68,9 @@ const FrameworkSelector: React.FC<FrameworkSelectorProps> = ({
         type="button"
         onClick={toggleDropdown}
         disabled={disabled}
-        className={`
-          flex items-center justify-between w-full px-3 py-2 text-left bg-white border border-gray-300 rounded-lg shadow-sm
-          hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black focus:border-black
-          disabled:opacity-50 disabled:cursor-not-allowed
-          transition-all duration-200
-          ${compact ? "text-sm" : "text-base"}
-          ${isOpen ? "ring-2 ring-black border-black" : ""}
-        `}
+        className={`flex items-center justify-between w-full px-3 py-2 text-left bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-black focus:border-black disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ${
+          compact ? "text-sm" : "text-base"
+        } ${isOpen ? "ring-2 ring-black border-black" : ""}`}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label="Select framework"
@@ -120,17 +115,13 @@ const FrameworkSelector: React.FC<FrameworkSelectorProps> = ({
                 key={framework.id}
                 type="button"
                 onClick={() => handleFrameworkSelect(framework)}
-                className={`
-                  w-full px-3 py-2 text-left flex items-center space-x-2
-                  hover:bg-gray-100 focus:bg-gray-100 focus:outline-none
-                  transition-colors duration-150
-                  ${compact ? "text-sm" : "text-base"}
-                  ${
-                    currentFramework.id === framework.id
-                      ? "bg-gray-50 font-medium"
-                      : ""
-                  }
-                `}
+                className={`w-full px-3 py-2 text-left flex items-center space-x-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none transition-colors duration-150 ${
+                  compact ? "text-sm" : "text-base"
+                } ${
+                  currentFramework.id === framework.id
+                    ? "bg-gray-50 font-medium"
+                    : ""
+                }`}
                 role="option"
                 aria-selected={currentFramework.id === framework.id}
               >

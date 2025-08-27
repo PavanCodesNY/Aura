@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Environment Variables Debug</title>
+</head>
+<body>
+    <h1>Environment Variables Debug</h1>
+    <div id="output"></div>
+    
+    <script>
+        const output = document.getElementById('output');
+        
+        // Check if the environment variables are available
+        const envData = {
+            VITE_OPENROUTER_API_KEY: import.meta.env?.VITE_OPENROUTER_API_KEY,
+            VITE_OPENROUTER_MODEL: import.meta.env?.VITE_OPENROUTER_MODEL,
+            VITE_HUGGINGFACE_TOKEN: import.meta.env?.VITE_HUGGINGFACE_TOKEN,
+            NODE_ENV: import.meta.env?.NODE_ENV,
+            DEV: import.meta.env?.DEV
+        };
+        
+        output.innerHTML = '<pre>' + JSON.stringify(envData, null, 2) + '</pre>';
+        console.log('Environment Variables:', envData);
+    </script>
+</body>
+</html>

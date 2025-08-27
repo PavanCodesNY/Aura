@@ -22,16 +22,13 @@ const CodeButton: React.FC<CodeButtonProps> = ({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`
-        group relative px-2.5 py-1.5 text-xs font-mono font-medium rounded-lg border transition-all duration-200
-        ${
-          disabled
-            ? "text-gray-300 border-gray-200 cursor-not-allowed"
-            : isActive
-            ? "text-black border-black bg-gray-50"
-            : "text-gray-600 border-gray-200 hover:text-black hover:border-black hover:bg-gray-50 active:scale-95"
-        }
-      `}
+      className={`group relative px-2.5 py-1.5 text-xs font-mono font-medium rounded-lg border transition-all duration-200 ${
+        disabled
+          ? "text-gray-300 border-gray-200 cursor-not-allowed"
+          : isActive
+          ? "text-black border-black bg-gray-50"
+          : "text-gray-600 border-gray-200 hover:text-black hover:border-black hover:bg-gray-50 active:scale-95"
+      }`}
       title={
         disabled
           ? "No component to show"

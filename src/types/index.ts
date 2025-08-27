@@ -28,6 +28,7 @@ export interface ComponentTemplates {
 export interface AIResponse {
   response: string;
   componentType: string | null;
+  usedRAG?: boolean;
 }
 
 export interface ComponentProps {

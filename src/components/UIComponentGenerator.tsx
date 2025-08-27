@@ -6,31 +6,25 @@ import { Message, ComponentTemplate } from "../types";
 import { Framework, FrameworkId } from "../types/framework";
 
 // Components
-import {
-  MagneticButton,
-  GlowingCard,
-  MinimalInput,
-  LoadingSpinner,
-  ToggleSwitch,
-  ComponentLoader,
-} from "./ui";
+import { ComponentLoader } from "./ui";
 import ResizeHandle from "./ResizeHandle";
 import ApiSettings from "./ApiSettings";
 import CodeViewer from "./CodeViewer";
 import CodeButton from "./CodeButton";
+// import DebugPanel from "./DebugPanel";
 
 // Data & Services
-import { componentTemplates } from "../data/componentTemplates";
-import { multiFrameworkTemplates } from "../data/multiFrameworkTemplates";
 import { aiPersonality } from "../data/aiPersonality";
 import {
-  callOpenRouterAPI,
-  generateAIResponse,
+  callAIAPI,
   generateCustomComponent,
+  AIProvider,
+  AIConfig,
 } from "../services/aiService";
 import { frameworkManager } from "../services/frameworkManager";
-import { templateEngine } from "../services/templateEngine";
 import { getAllFrameworks } from "../data/frameworks";
+import { multiFrameworkTemplates } from "../data/multiFrameworkTemplates";
+import { templateEngine } from "../services/templateEngine";
 
 const UIComponentGenerator: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
@@ -47,7 +41,27 @@ const UIComponentGenerator: React.FC = () => {
     useState<ComponentTemplate | null>(null);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isComponentLoading, setIsComponentLoading] = useState<boolean>(false);
-  const [apiKey, setApiKey] = useState<string>("");
+  // AI Configuration state
+  const [aiProvider, setAiProvider] = useState<AIProvider>(
+    (localStorage.getItem("aura_ai_provider") as AIProvider) || "gemini"
+  );
+  const [apiKey, setApiKey] = useState<string>(() => {
+    const stored = localStorage.getItem("aura_api_key");
+    if (stored) return stored;
+
+    // Auto-load API key based on current provider
+    const currentProvider =
+      (localStorage.getItem("aura_ai_provider") as AIProvider) || "gemini";
+    if (currentProvider === "gemini") {
+      return (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
+    } else {
+      return (import.meta as any).env?.VITE_OPENROUTER_API_KEY || "";
+    }
+  });
+  const [model, setModel] = useState<string>(
+    localStorage.getItem("aura_model") ||
+      (aiProvider === "openrouter" ? "qwen/qwen3-coder:free" : "gemma-3-27b-it")
+  );
   const [showApiSettings, setShowApiSettings] = useState<boolean>(false);
   const [sidebarWidth, setSidebarWidth] = useState<number>(20); // Percentage
   const [isResizing, setIsResizing] = useState<boolean>(false);
@@ -198,6 +212,38 @@ const UIComponentGenerator: React.FC = () => {
     setIsResizing(true);
   };
 
+  // Persist AI configuration and auto-load API key when provider changes
+  useEffect(() => {
+    localStorage.setItem("aura_ai_provider", aiProvider);
+
+    // Always load the appropriate environment API key and model when provider changes
+    if (aiProvider === "gemini") {
+      const geminiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
+      if (geminiKey) {
+        setApiKey(geminiKey);
+        localStorage.removeItem("aura_api_key"); // Clear cached key
+      }
+      // Force set the correct model
+      setModel("gemma-3-27b-it");
+      localStorage.removeItem("aura_model"); // Clear cached model
+    } else {
+      const openrouterKey = (import.meta as any).env?.VITE_OPENROUTER_API_KEY;
+      if (openrouterKey) {
+        setApiKey(openrouterKey);
+        localStorage.removeItem("aura_api_key"); // Clear cached key
+      }
+      // Force set the correct model
+      setModel("qwen/qwen3-coder:free");
+      localStorage.removeItem("aura_model"); // Clear cached model
+    }
+  }, [aiProvider]);
+  useEffect(() => {
+    if (apiKey) localStorage.setItem("aura_api_key", apiKey);
+  }, [apiKey]);
+  useEffect(() => {
+    if (model) localStorage.setItem("aura_model", model);
+  }, [model]);
+
   // Keyboard shortcuts for framework switching, resizing and code viewer
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -281,10 +327,18 @@ const UIComponentGenerator: React.FC = () => {
       setTimeout(resolve, 800 + Math.random() * 1200)
     );
 
-    // Use real AI API if key is provided, otherwise use fallback
-    const { response, componentType } = apiKey
-      ? await callOpenRouterAPI(currentInput, messages, apiKey)
-      : generateAIResponse(currentInput);
+    // Always use AI - no fallback
+    const aiConfig: AIConfig = {
+      provider: aiProvider,
+      apiKey,
+      model,
+    };
+    const { response, componentType } = await callAIAPI(
+      currentInput,
+      messages,
+      aiConfig,
+      currentFramework.id
+    );
 
     const assistantMessage: Message = {
       id: Date.now() + 1,
@@ -296,71 +350,38 @@ const UIComponentGenerator: React.FC = () => {
     setMessages((prev) => [...prev, assistantMessage]);
     setIsGenerating(false);
 
-    // If a component was identified, generate it
-    if (componentType && componentTemplates[componentType]) {
+    // Generate AI component if componentType is detected
+    if (componentType) {
       setIsComponentLoading(true);
 
       // Component generation animation
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
-      // Handle custom AI-generated components
-      if (componentType === "custom") {
-        const customComponent = await generateCustomComponent(
-          currentInput,
-          apiKey
-        );
-        if (customComponent && customComponent.multiFramework) {
-          // Store the multi-framework component for framework switching
-          const currentFrameworkCode =
-            customComponent.multiFramework[currentFramework.id];
-          if (currentFrameworkCode) {
-            setGeneratedComponent({
-              code: currentFrameworkCode.code,
-              preview: customComponent.preview,
-              type: customComponent.type,
-            });
-            // Store the multi-framework data for later use
-            (window as any).currentMultiFrameworkComponent =
-              customComponent.multiFramework;
-          }
-        } else {
-          // Fallback to just the React code
-          setGeneratedComponent(customComponent);
-        }
-        setIsComponentLoading(false);
-        return;
-      }
+      // Always generate custom AI components
+      const customComponent = await generateCustomComponent(
+        currentInput,
+        aiConfig,
+        undefined,
+        currentFramework.id
+      );
 
-      // Use the new multi-framework system for predefined components
-      // Map component type to component ID
-      const componentTypeToId: Record<string, string> = {
-        "magnetic button": "magnetic-button",
-        "glowing card": "glowing-card",
-        "minimal input": "minimal-input",
-        "toggle switch": "toggle-switch",
-        "loading spinner": "loading-spinner",
-      };
-
-      const componentId = componentTypeToId[componentType];
-
-      if (componentId) {
-        const frameworkTemplate = templateEngine.getTemplate(
-          componentId,
-          currentFramework.id
-        );
-        if (frameworkTemplate) {
+      if (customComponent && customComponent.multiFramework) {
+        // Store the multi-framework component for framework switching
+        const currentFrameworkCode =
+          customComponent.multiFramework[currentFramework.id];
+        if (currentFrameworkCode) {
           setGeneratedComponent({
-            code: frameworkTemplate.code,
-            preview: componentType,
-            type: multiFrameworkTemplates[componentId].type,
+            code: currentFrameworkCode.code,
+            preview: customComponent.preview,
+            type: customComponent.type,
           });
-        } else {
-          // Fallback to old system
-          setGeneratedComponent(componentTemplates[componentType]);
+          // Store the multi-framework data for later use
+          (window as any).currentMultiFrameworkComponent =
+            customComponent.multiFramework;
         }
-      } else {
-        // Fallback to old system
-        setGeneratedComponent(componentTemplates[componentType]);
+      } else if (customComponent) {
+        // Fallback to just the React code
+        setGeneratedComponent(customComponent);
       }
 
       setIsComponentLoading(false);
@@ -411,10 +432,11 @@ const UIComponentGenerator: React.FC = () => {
             </div>
             <div className="space-y-2">
               <p className="text-sm font-medium text-gray-600">
-                Ready to Create
+                AI-Powered Component Generator
               </p>
               <p className="text-xs text-gray-400 max-w-xs mx-auto leading-relaxed">
-                Describe your component and watch it come to life
+                Describe any component and our AI will generate custom code for
+                you
               </p>
             </div>
           </div>
@@ -422,83 +444,32 @@ const UIComponentGenerator: React.FC = () => {
       );
     }
 
-    switch (generatedComponent.preview) {
-      case "magnetic button":
-        return (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center space-y-6">
-              <MagneticButton>Hover & move cursor</MagneticButton>
-              <p className="text-xs text-gray-500 font-medium">
-                Try hovering and moving your cursor around the button
-              </p>
-            </div>
+    // For AI-generated components, show a generic preview message
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center space-y-6">
+          <div className="w-16 h-16 mx-auto bg-gradient-to-br from-black to-gray-600 rounded-2xl flex items-center justify-center">
+            <Sparkles className="w-8 h-8 text-white" />
           </div>
-        );
-      case "glowing card":
-        return (
-          <div className="flex items-center justify-center h-full p-8">
-            <div className="text-center space-y-6">
-              <GlowingCard className="w-80">
-                <h3 className="text-lg font-semibold mb-3">Interactive Card</h3>
-                <p className="text-gray-600 leading-relaxed">
-                  This card responds to your cursor with a subtle glow effect.
-                  Perfect for showcasing content with elegant hover states.
-                </p>
-              </GlowingCard>
-              <p className="text-xs text-gray-500 font-medium">
-                Move your cursor over the card to see the glow effect
-              </p>
-            </div>
+          <div className="space-y-2">
+            <p className="text-lg font-medium text-gray-800 capitalize">
+              {generatedComponent.preview}
+            </p>
+            <p className="text-sm text-gray-600">
+              AI-generated component ready!
+            </p>
+            <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
+              Your custom component has been generated with{" "}
+              {generatedComponent.code.split("\n").length} lines of code. Use ⌘K
+              to view the full code.
+            </p>
           </div>
-        );
-      case "minimal input":
-        return (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center space-y-6">
-              <div className="w-80">
-                <MinimalInput placeholder="Enter your email" />
-              </div>
-              <p className="text-xs text-gray-500 font-medium">
-                Click to focus and start typing
-              </p>
-            </div>
-          </div>
-        );
-      case "loading spinner":
-        return (
-          <div className="flex items-center justify-center h-full">
-            <LoadingSpinner size="lg" />
-          </div>
-        );
-      case "toggle switch":
-        return (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center space-y-6">
-              <div className="flex items-center justify-center space-x-4">
-                <span className="text-sm text-gray-600">
-                  Enable notifications
-                </span>
-                <ToggleSwitch />
-              </div>
-              <p className="text-xs text-gray-500 font-medium">
-                Click to toggle the switch
-              </p>
-            </div>
-          </div>
-        );
-      default:
-        return null;
-    }
+        </div>
+      </div>
+    );
   };
 
-  // Quick suggestions
-  const suggestions = [
-    { label: "Button", full: "magnetic button that follows cursor" },
-    { label: "Card", full: "glowing card with hover effects" },
-    { label: "Input", full: "minimal input field with animations" },
-    { label: "Toggle", full: "smooth toggle switch" },
-    { label: "Spinner", full: "loading spinner animation" },
-  ];
+  // No predefined suggestions - everything is AI-generated
 
   return (
     <div className="h-screen bg-white flex overflow-hidden relative">
@@ -511,20 +482,22 @@ const UIComponentGenerator: React.FC = () => {
         {/* Left Panel - Chat Interface */}
         <div className="bg-white flex flex-col border-r border-gray-100 sidebar-width">
           {/* Header */}
-          <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100/50 backdrop-blur-sm">
+          <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100/50 backdrop-blur-xl bg-white/70">
             <div className="flex items-center space-x-4">
               <div className="relative">
-                <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center shadow-sm transition-all duration-300 hover:shadow-md hover:scale-105">
+                <div className="w-8 h-8 bg-black rounded-xl flex items-center justify-center shadow-sm transition-all duration-300 hover:shadow-md hover:scale-105">
                   <Sparkles className="w-4 h-4 text-white" />
                 </div>
-                <div className="absolute -inset-1 bg-gradient-to-r from-black to-gray-800 rounded-lg opacity-0 group-hover:opacity-20 transition-opacity duration-300 -z-10"></div>
+                <div className="absolute -inset-1 bg-gradient-to-r from-black to-gray-800 rounded-xl opacity-0 group-hover:opacity-20 transition-opacity duration-300 -z-10"></div>
               </div>
               <div className="space-y-0.5">
                 <h1 className="text-xl font-medium text-black tracking-tight">
                   Aura
                 </h1>
                 <p className="text-xs text-gray-500 font-medium tracking-wide uppercase">
-                  {apiKey ? "AI Connected" : "Local Mode"}
+                  {apiKey
+                    ? `${aiProvider} Connected`.toUpperCase()
+                    : "Local Mode"}
                 </p>
               </div>
             </div>
@@ -542,7 +515,7 @@ const UIComponentGenerator: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowApiSettings(!showApiSettings)}
-                className="p-2.5 text-gray-400 hover:text-black hover:bg-gray-50 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95"
+                className="p-2.5 text-gray-400 hover:text-black hover:bg-gray-50 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95"
                 aria-label="Toggle API settings"
                 title="Toggle API settings"
               >
@@ -553,8 +526,12 @@ const UIComponentGenerator: React.FC = () => {
 
           {/* API Settings Panel */}
           <ApiSettings
+            aiProvider={aiProvider}
+            setAiProvider={setAiProvider}
             apiKey={apiKey}
             setApiKey={setApiKey}
+            model={model}
+            setModel={setModel}
             showApiSettings={showApiSettings}
           />
 
@@ -570,8 +547,8 @@ const UIComponentGenerator: React.FC = () => {
                 <div
                   className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
                     message.type === "user"
-                      ? "bg-black text-white ml-4"
-                      : "bg-gray-50 text-gray-800 mr-4 border border-gray-100"
+                      ? "bg-black text-white ml-4 shadow-sm"
+                      : "bg-white/70 backdrop-blur-sm text-gray-800 mr-4 border border-gray-100"
                   }`}
                 >
                   {message.content}
@@ -581,7 +558,7 @@ const UIComponentGenerator: React.FC = () => {
 
             {isGenerating && (
               <div className="flex justify-start">
-                <div className="bg-gray-50 text-gray-800 mr-4 border border-gray-100 px-4 py-3 rounded-2xl text-sm">
+                <div className="bg-white/70 backdrop-blur-sm text-gray-800 mr-4 border border-gray-100 px-4 py-3 rounded-2xl text-sm shadow-sm">
                   <div className="flex items-center space-x-2">
                     <div className="flex space-x-1">
                       <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></div>
@@ -597,23 +574,7 @@ const UIComponentGenerator: React.FC = () => {
           </div>
 
           {/* Input Area */}
-          <div className="px-8 py-6 border-t border-gray-100/50 bg-white/80 backdrop-blur-sm">
-            {/* Quick suggestions */}
-            {!inputValue && (
-              <div className="flex flex-wrap gap-2 mb-4">
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={suggestion.label}
-                    type="button"
-                    onClick={() => setInputValue(`Create a ${suggestion.full}`)}
-                    className="px-2 py-0.5 text-xs bg-gray-50 hover:bg-black hover:text-white text-gray-600 rounded-md transition-all duration-200 border border-gray-200 hover:border-black font-medium shrink-0"
-                  >
-                    {suggestion.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
+          <div className="px-8 py-6 border-t border-gray-100/50 bg-white/80 backdrop-blur-xl">
             {/* Input with integrated send button */}
             <div className="relative">
               <textarea
@@ -621,7 +582,7 @@ const UIComponentGenerator: React.FC = () => {
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyPress}
                 placeholder="Describe your component..."
-                className="w-full pl-4 pr-16 py-3 border border-gray-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-1 focus:ring-black focus:border-black transition-all duration-200 bg-white shadow-sm placeholder:text-gray-400 hover:shadow-md focus:shadow-md"
+                className="w-full pl-4 pr-16 py-3 border border-gray-200 rounded-2xl text-sm resize-none focus:outline-none focus:ring-1 focus:ring-black focus:border-black transition-all duration-200 bg-white/70 backdrop-blur-sm shadow-sm placeholder:text-gray-400 hover:shadow-md focus:shadow-md"
                 rows={3}
                 maxLength={500}
               />
@@ -644,7 +605,7 @@ const UIComponentGenerator: React.FC = () => {
                 type="button"
                 onClick={handleSendMessage}
                 disabled={!inputValue.trim() || isGenerating}
-                className="absolute bottom-3 right-2 p-2 bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-105 active:scale-95 shadow-sm hover:shadow-md group overflow-hidden"
+                className="absolute bottom-3 right-2 p-2 bg-black text-white rounded-xl hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-105 active:scale-95 shadow-sm hover:shadow-md group overflow-hidden"
                 aria-label="Send message"
                 title="Send message"
               >
@@ -671,7 +632,7 @@ const UIComponentGenerator: React.FC = () => {
                   <button
                     type="button"
                     onClick={copyToClipboard}
-                    className="text-[10px] text-gray-600 hover:text-black transition-all duration-200 flex items-center space-x-1.5 px-2 py-1 rounded-md hover:bg-gray-50 font-medium group shrink-0"
+                    className="text-[10px] text-gray-600 hover:text-black transition-all duration-200 flex items-center space-x-1.5 px-2 py-1 rounded-lg hover:bg-gray-50 font-medium group shrink-0"
                   >
                     <Copy
                       size={10}
@@ -761,6 +722,9 @@ const UIComponentGenerator: React.FC = () => {
         frameworks={availableFrameworks}
         onFrameworkChange={handleFrameworkChange}
       />
+
+      {/* Debug Panel (dev mode only) */}
+      {/* <DebugPanel /> */}
     </div>
   );
 };

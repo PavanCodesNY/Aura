@@ -26,6 +26,8 @@ const CodeViewer: React.FC<CodeViewerProps> = ({
   readonly = false,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [wrap, setWrap] = useState(false);
+  const [fontSize, setFontSize] = useState(11);
 
   const handleCopy = async () => {
     try {
@@ -101,17 +103,21 @@ const CodeViewer: React.FC<CodeViewerProps> = ({
 
   return (
     <div
-      className={`absolute top-0 right-0 h-full bg-gray-900 border-l border-gray-700 shadow-2xl flex flex-col transition-all duration-300 ease-in-out z-40 ${
-        isOpen ? "w-[480px] translate-x-0" : "w-0 translate-x-full"
+      className={`absolute top-0 right-0 h-full bg-[#0b0b0c] border-l border-black/10 shadow-2xl flex flex-col transition-all duration-300 ease-in-out z-40 backdrop-blur-xl ${
+        isOpen ? "w-[540px] translate-x-0" : "w-0 translate-x-full"
       }`}
+      style={{
+        backgroundImage:
+          "radial-gradient(1200px 50% at 100% 0%, rgba(255,255,255,0.04), transparent 40%), radial-gradient(1200px 50% at 0% 100%, rgba(255,255,255,0.04), transparent 40%)",
+      }}
     >
       {/* Header - Dark theme */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-700 bg-gray-800">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10 bg-white/[0.02]">
         <div className="flex items-center space-x-3">
-          <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
-          <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
-          <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
-          <div className="ml-3 text-xs font-medium text-gray-300 truncate">
+          <div className="w-1.5 h-1.5 bg-red-500/80 rounded-full"></div>
+          <div className="w-1.5 h-1.5 bg-yellow-400/80 rounded-full"></div>
+          <div className="w-1.5 h-1.5 bg-green-500/80 rounded-full"></div>
+          <div className="ml-3 text-xs font-medium text-gray-200 truncate">
             {componentName.charAt(0).toUpperCase() +
               componentName.slice(1).replace(/\s+/g, "")}
             .{framework.extension}
@@ -132,11 +138,11 @@ const CodeViewer: React.FC<CodeViewerProps> = ({
             </div>
           )}
 
-          {/* Copy Button */}
+          {/* Controls */}
           <button
             type="button"
             onClick={handleCopy}
-            className="flex items-center space-x-1.5 px-2 py-1 text-xs font-medium text-gray-400 hover:text-white hover:bg-gray-700 rounded-md transition-all duration-200 shrink-0"
+            className="flex items-center space-x-1.5 px-2 py-1 text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-md transition-all duration-200 shrink-0"
             title="Copy code"
           >
             {copied ? (
@@ -151,20 +157,48 @@ const CodeViewer: React.FC<CodeViewerProps> = ({
               </>
             )}
           </button>
+          <div className="hidden sm:flex items-center space-x-2 text-[10px] text-gray-400">
+            <button
+              type="button"
+              onClick={() => setWrap(!wrap)}
+              className={`px-1.5 py-0.5 rounded-md hover:bg-white/5 ${wrap ? "text-white" : ""}`}
+              title="Toggle line wrap"
+            >
+              Wrap
+            </button>
+            <div className="flex items-center space-x-1">
+              <button
+                type="button"
+                onClick={() => setFontSize((s) => Math.max(10, s - 1))}
+                className="px-1.5 py-0.5 rounded-md hover:bg-white/5"
+                title="Smaller font"
+              >
+                A-
+              </button>
+              <button
+                type="button"
+                onClick={() => setFontSize((s) => Math.min(16, s + 1))}
+                className="px-1.5 py-0.5 rounded-md hover:bg-white/5"
+                title="Larger font"
+              >
+                A+
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Code Content with line numbers */}
-      <div className="flex-1 overflow-hidden bg-gray-900">
+      <div className="flex-1 overflow-hidden bg-transparent">
         <div className="h-full flex">
           {/* Line numbers - extends full height */}
-          <div className="bg-gray-800 border-r border-gray-700 w-8 flex-shrink-0 overflow-hidden">
-            <div className="py-4 px-1">{generateLineNumbers(code)}</div>
+          <div className="bg-white/[0.03] border-r border-white/10 w-10 flex-shrink-0 overflow-hidden">
+            <div className="py-4 px-2">{generateLineNumbers(code)}</div>
           </div>
 
           {/* Code content */}
           <div className="flex-1 min-w-0 overflow-auto">
-            <pre className="p-4 text-xs leading-relaxed font-mono text-gray-200 whitespace-pre-wrap break-words">
+            <pre className={`p-4 leading-relaxed font-mono text-gray-100 ${wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre"}`} style={{ fontSize }}>
               <code
                 dangerouslySetInnerHTML={{
                   __html: highlightCode(code),
@@ -176,7 +210,7 @@ const CodeViewer: React.FC<CodeViewerProps> = ({
       </div>
 
       {/* Footer - Dark theme */}
-      <div className="px-4 py-2 border-t border-gray-700 bg-gray-800">
+      <div className="px-4 py-2 border-t border-white/10 bg-white/[0.02]">
         <div className="flex items-center justify-between text-xs text-gray-400">
           <div className="flex items-center space-x-3">
             <span className="text-blue-400 capitalize">
